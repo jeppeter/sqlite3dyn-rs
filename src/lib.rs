@@ -2,39 +2,221 @@
 use libloading;
 use std::error::Error;
 
+mod errors;
+mod logger;
+
+use crate::logger::*;
+
+sqlite3dyn_error_class!{Sqlite3ConnError}
+
+#[allow(non_camel_case_types)]
+#[repr(C)]
 pub struct SQLITE_RESULT(std::ffi::c_int);
 
+impl PartialEq for SQLITE_RESULT {
+    fn eq(&self,others :&SQLITE_RESULT) -> bool {
+        return self.0 == others.0;
+    }
+
+    fn ne(&self,others :&SQLITE_RESULT) -> bool {
+        return !self.eq(others);
+    }
+}
+
+
+const SQLITE3_OK :SQLITE_RESULT = SQLITE_RESULT(0);
+
+#[allow(non_upper_case_globals)]
+static mut  sqlite3_dll_hdl :Option<libloading::Library> = None;
+#[allow(non_upper_case_globals)]
+static mut   sqlite3_open_v2 :Option<libloading::Symbol<'static,unsafe extern "C" fn(fname :* const std::ffi::c_char,ppdb :*const *mut std::ffi::c_void,flags :std::ffi::c_int,connstr :*const std::ffi::c_char) -> SQLITE_RESULT>>=None;
+#[allow(non_upper_case_globals)]
+static mut   sqlite3_close :Option<libloading::Symbol<'static,unsafe extern "C" fn(pdb:*mut std::ffi::c_void) -> std::ffi::c_void>>=None;
+#[allow(non_upper_case_globals)]
+static mut   sqlite3_exec :Option<libloading::Symbol<'static,unsafe extern "C" fn(pdb :*mut std::ffi::c_void,execstr :*const std::ffi::c_char,unsafe extern "C" fn(arg :*mut std::ffi::c_void,argc :std::ffi::c_int,argv :*const *const std::ffi::c_char, *const *const std::ffi::c_char) -> std::ffi::c_int,arg :*mut std::ffi::c_void,pperrmsg:*const *mut std::ffi::c_char) -> SQLITE_RESULT>> = None;
+#[allow(non_upper_case_globals)]
+static mut    sqlite3_free :Option<libloading::Symbol<'static,unsafe extern "C" fn(errmsg :*mut std::ffi::c_char) -> std::ffi::c_void>> = None;
+
 pub struct Sqlite3Dll {
-    sqlite3_dll_hdl :libloading::Library,
-    sqlite3_open_v2 :libloading::Symbol<'static,unsafe extern "C" fn(fname :* const std::ffi::c_char,ppdb :*const *mut std::ffi::c_void,flags :std::ffi::c_uint,connstr :*const std::ffi::c_char) -> SQLITE_RESULT>,
-    sqlite3_close :libloading::Symbol<'static,unsafe extern "C" fn(pdb:*mut std::ffi::c_void) -> std::ffi::c_void>,
-    sqlite3_exec :libloading::Symbol<'static,unsafe extern "C" fn(pdb :*mut std::ffi::c_void,execstr :*const std::ffi::c_char,unsafe extern "C" fn(arg :*mut std::ffi::c_void,argc :std::ffi::c_int,argv :*const *const std::ffi::c_char) -> SQLITE_RESULT,arg :*mut std::ffi::c_void,pperrmsg:*const *mut std::ffi::c_char) -> SQLITE_RESULT>,
-    sqlite3_free :libloading::Symbol<'static,unsafe extern "C" fn(errmsg :*mut std::ffi::c_char) -> std::ffi::c_void>,
+    // sqlite3_dll_hdl :libloading::Library,
+    // sqlite3_open_v2 :Option<libloading::Symbol<'a,unsafe extern "C" fn(fname :* const std::ffi::c_char,ppdb :*const *mut std::ffi::c_void,flags :std::ffi::c_uint,connstr :*const std::ffi::c_char) -> SQLITE_RESULT>>,
+    // sqlite3_close :Option<libloading::Symbol<'static,unsafe extern "C" fn(pdb:*mut std::ffi::c_void) -> std::ffi::c_void>>,
+    // sqlite3_exec :Option<libloading::Symbol<'static,unsafe extern "C" fn(pdb :*mut std::ffi::c_void,execstr :*const std::ffi::c_char,unsafe extern "C" fn(arg :*mut std::ffi::c_void,argc :std::ffi::c_int,argv :*const *const std::ffi::c_char) -> SQLITE_RESULT,arg :*mut std::ffi::c_void,pperrmsg:*const *mut std::ffi::c_char) -> SQLITE_RESULT>>,
+    // sqlite3_free :Option<libloading::Symbol<'static,unsafe extern "C" fn(errmsg :*mut std::ffi::c_char) -> std::ffi::c_void>>,
 }
 
 impl Sqlite3Dll {
-    fn load(dllname :&str) -> Result<Sqlite3Dll,Box<dyn Error>> {
-        let mut hdl :libloading::Library;
-        let mut openv2 :Option<libloading::Symbol<unsafe extern "C" fn(fname :* const std::ffi::c_char,ppdb :*const *mut std::ffi::c_void,flags :std::ffi::c_uint,connstr :*const std::ffi::c_char) -> SQLITE_RESULT>> = None;
-        let mut closefn :Option< libloading::Symbol<unsafe extern "C" fn(pdb:*mut std::ffi::c_void) -> std::ffi::c_void> > = None;
-        let mut execfn :Option< libloading::Symbol<unsafe extern "C" fn(pdb :*mut std::ffi::c_void,execstr :*const std::ffi::c_char,unsafe extern "C" fn(arg :*mut std::ffi::c_void,argc :std::ffi::c_int,argv :*const *const std::ffi::c_char) -> SQLITE_RESULT,arg :*mut std::ffi::c_void,pperrmsg:*const *mut std::ffi::c_char) -> SQLITE_RESULT> > = None;
-        let mut freefn : Option<libloading::Symbol<unsafe extern "C" fn(errmsg :*mut std::ffi::c_char) -> std::ffi::c_void>> = None;
-
-        hdl = unsafe { libloading::Library::new(dllname)?};
+    #[allow(static_mut_refs)]
+    pub fn load(dllname :&str) -> Result<Sqlite3Dll,Box<dyn Error>> {
+        let retv :Sqlite3Dll = Sqlite3Dll{};
         unsafe {
-            openv2 = Some(hdl.get("sqlite3_open_v2\0")?);
-            closefn = Some(hdl.get("sqlite3_close\0")?);
-            execfn = Some(hdl.get("sqlite3_exec\0")?);
-            freefn = Some(hdl.get("sqlite3_free\0")?);
+            if sqlite3_dll_hdl.is_some() {
+                sqlite3_exec = None;
+                sqlite3_free = None;
+                sqlite3_close = None;
+                sqlite3_open_v2 = None;
+                sqlite3_dll_hdl = None;
+            }
+
+            sqlite3_dll_hdl = Some(libloading::Library::new(dllname)?);
+            sqlite3_exec = Some(sqlite3_dll_hdl.as_ref().unwrap().get("sqlite3_exec\0")?);
+            sqlite3_open_v2 = Some(sqlite3_dll_hdl.as_ref().unwrap().get("sqlite3_open_v2\0")?);
+            sqlite3_close = Some(sqlite3_dll_hdl.as_ref().unwrap().get("sqlite3_close\0")?);
+            sqlite3_free = Some(sqlite3_dll_hdl.as_ref().unwrap().get("sqlite3_free\0")?);
         }
 
-        Ok(Sqlite3Dll {
-            sqlite3_dll_hdl : hdl,
-            sqlite3_open_v2 : openv2.unwrap().clone(),
-            sqlite3_close : closefn.unwrap().clone(),
-            sqlite3_exec : execfn.unwrap().clone(),
-            sqlite3_free : freefn.unwrap().clone(),
-        })
+        Ok(retv)
     }
+}
+
+const SQLITE_OPEN_READWRITE :std::ffi::c_int = 0x2;
+const SQLITE_OPEN_CREATE :std::ffi::c_int = 0x4;
+
+pub struct Sqlite3Conn {
+    db :*mut std::ffi::c_void,
+    nextarg :*mut std::ffi::c_void,
+    callback :Option<fn(*mut std::ffi::c_void,vals :&Vec<String>,cols :&Vec<String>) -> Result<(),Box<dyn Error>> >,
+}
+
+impl Drop for Sqlite3Conn {
+    #[allow(static_mut_refs)]
+    fn drop(&mut self) {
+        if self.db != std::ptr::null_mut() {
+            unsafe {
+                if sqlite3_close.is_some() {
+                    sqlite3_close.as_ref().unwrap()(self.db);
+                }
+            }
+            self.db = std::ptr::null_mut();
+        }
+        self.nextarg = std::ptr::null_mut();
+        self.callback = None;
+        return;
+    }
+}
+
+unsafe extern "C" fn next_sqlite3_conn_exec_callback(ptr :*mut std::ffi::c_void,argc :std::ffi::c_int,vals :*const *const std::ffi::c_char,cols :*const *const std::ffi::c_char) -> std::ffi::c_int {
+    let  conn :*mut Sqlite3Conn = ptr as *mut Sqlite3Conn;
+    let mut valvecs :Vec<String> = vec![];
+    let mut colvecs :Vec<String> = vec![];
+    let mut i :std::ffi::c_int;
+    let mut ores:Result<&str,std::str::Utf8Error>;
+
+    let mut curptr :*const std::ffi::c_char;
+    unsafe {
+        if (*conn).callback.is_none() {
+            return 0;
+        }
+
+        i = 0;
+        while i < argc {
+            curptr = *(vals.wrapping_add(i as usize));
+            ores = std::ffi::CStr::from_ptr(curptr).to_str();
+            if ores.is_err() {
+                return -1;
+            }
+            valvecs.push(ores.unwrap().to_string());
+            i += 1;
+        }
+
+        i = 0;
+        while i < argc {
+            curptr = *(cols.wrapping_add(i as usize));
+            ores = std::ffi::CStr::from_ptr(curptr).to_str();
+            if ores.is_err() {
+                return -1;
+            }
+            colvecs.push(ores.unwrap().to_string());
+            i += 1;
+        }
+    }
+
+    unsafe {
+        let ores2 = (*conn).callback.as_ref().unwrap()((*conn).nextarg,&valvecs,&colvecs);
+        if ores2.is_err() {
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
+impl Sqlite3Conn {
+    #[allow(unused_mut)]
+    #[allow(static_mut_refs)]
+    pub fn connect(_drv :&Sqlite3Dll,dsn :&str) -> Result<Sqlite3Conn,Box<dyn Error>> {
+        let mut retv :Sqlite3Conn = Sqlite3Conn {
+            db : std::ptr::null_mut(),
+            nextarg : std::ptr::null_mut(),
+            callback : None,
+        };
+        let mut sqlres : SQLITE_RESULT;
+        let connstr :String;
+        unsafe {
+            if sqlite3_dll_hdl.is_none() || sqlite3_open_v2.is_none() {
+                sqlite3dyn_new_error!{Sqlite3ConnError,"not initialize succ"}
+            }
+        }
+
+        connstr = format!("{}\0",dsn);
+        unsafe {
+            let ppdb :*const *mut std::ffi::c_void = &retv.db as *const *mut std::ffi::c_void;
+            sqlres = sqlite3_open_v2.as_ref().unwrap()(connstr.as_ptr() as *const std::ffi::c_char,ppdb,SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE,std::ptr::null());
+            if sqlres != SQLITE3_OK {
+                sqlres = sqlite3_open_v2.as_ref().unwrap()(connstr.as_ptr() as *const std::ffi::c_char,ppdb,SQLITE_OPEN_READWRITE,std::ptr::null());
+                if sqlres != SQLITE3_OK {
+                    sqlite3dyn_new_error!{Sqlite3ConnError,"connect {} error", dsn}
+                }
+            }
+        }
+
+        Ok(retv)
+    }
+
+    #[allow(unused_assignments)]
+    #[allow(static_mut_refs)]
+    pub fn exec(&mut self,sqlstr :&str,ptr :*mut std::ffi::c_void, callback :Option< fn(*mut std::ffi::c_void,vals :&Vec<String>,cols :&Vec<String>) -> Result<(),Box<dyn Error>> >) -> Result<(),Box<dyn Error>> {
+        let sqlres :SQLITE_RESULT;
+        let mut errmsg :*mut std::ffi::c_char = std::ptr::null_mut();
+        let mut retores :Result<(),Box<dyn Error>> = Ok(());
+        unsafe {
+            if sqlite3_exec.is_none() {
+                sqlite3dyn_new_error!{Sqlite3ConnError,"not initialize succ"}
+            }
+        }
+        let sqlc :String = format!("{}\0",sqlstr);
+        self.nextarg = ptr;
+        if callback.is_none() {
+            self.callback = None;    
+        } else {
+            self.callback = Some(callback.as_ref().unwrap().clone());
+        }
+
+        unsafe {
+            let pperrmsg :*const *mut std::ffi::c_char = &errmsg as *const *mut std::ffi::c_char;
+            sqlres = sqlite3_exec.as_ref().unwrap()(self.db, sqlc.as_ptr() as *const std::ffi::c_char,next_sqlite3_conn_exec_callback, self as *mut Sqlite3Conn as *mut std::ffi::c_void,pperrmsg);
+            if errmsg != std::ptr::null_mut() {
+                let errsores = std::ffi::CStr::from_ptr(errmsg).to_str();
+                if errsores.is_ok() {
+                    let nerrs = errsores.unwrap().to_string();
+                    sqlite3dyn_log_trace!("nerrs [{}]",nerrs);
+                    retores = Err(sqlite3dyn_error_create!{Sqlite3ConnError,"exec {}\nerror {}",sqlstr,nerrs})    
+                } else {
+                    retores = Err(sqlite3dyn_error_create!{Sqlite3ConnError,"exec {}\nerror",sqlstr})
+                }
+
+                if sqlite3_free.is_some() {
+                    sqlite3_free.as_ref().unwrap()(errmsg);
+                }
+                errmsg = std::ptr::null_mut();
+            } else if sqlres != SQLITE3_OK {
+                retores = Err(sqlite3dyn_error_create!{Sqlite3ConnError,"exec {}\nerror",sqlstr});
+            }
+        }
+
+        return retores;       
+
+    }
+
 }
 
