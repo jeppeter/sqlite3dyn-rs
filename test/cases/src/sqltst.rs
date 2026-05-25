@@ -69,7 +69,7 @@ fn sqlexec_handler(ns :NameSpaceEx,_optargset :Option<Arc<RefCell<dyn ArgSetImpl
 
 	sarr = ns.get_array("subnargs");
 
-	if sarr.len() < 3 {
+	if sarr.len() < 2 {
 		extargs_new_error!{SqltstError,"need dbfile sqls..."}
 	}
 
@@ -97,11 +97,14 @@ pub fn load_sql_handler(parser :ExtArgsParser) -> Result<(),Box<dyn Error>> {
 	let reg :regex::Regex = regex::Regex::new("\\\\")?;
 	let cmdline :String;
 
-	println!("os [{}]",std::env::consts::OS);
-	sqldll = ".\\sqlite3.dll".to_string();
-	sqldll = reg.replace_all(&sqldll,"\\\\").to_string();
+	if std::env::consts::OS == "windows" {
+		sqldll = ".\\sqlite3.dll".to_string();
+		sqldll = reg.replace_all(&sqldll,"\\\\").to_string();
+	} else {
+		sqldll = "./libsqlite3.so".to_string();
+	}
 	cmdline = format!(r#"{{
-		"sqldll" : "{}"
+		"sqldll" : "{}",
 		"sqlexec<sqlexec_handler>##dbfile sqlstr ... to execute sql##" : {{
 			"$" : "+"
 		}}
