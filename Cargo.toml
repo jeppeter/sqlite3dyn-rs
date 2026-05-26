@@ -2,6 +2,15 @@
 name = "sqlite3dyn"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.85.0"
+author = ["jeppeter <jeppeter@gmail.com>"]
+description = """
+rust dynamic call sqlite3 share object
+"""
+license = "MIT/Apache-2.0"
+
+repository = "https://github.com/jeppeter/sqlite3dyn-rs"
+
 
 [dependencies]
 libloading = "^0.9.0"
