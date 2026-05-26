@@ -25,6 +25,43 @@ impl PartialEq for SQLITE_RESULT {
 }
 
 
+impl core::fmt::Debug for SQLITE_RESULT {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        core::fmt::Display::fmt(&self.0, f)
+    }
+}
+
+impl core::fmt::Display for SQLITE_RESULT {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        core::fmt::Display::fmt(&self.0,f)
+    }
+}
+
+impl core::fmt::Binary for SQLITE_RESULT {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        core::fmt::Binary::fmt(&self.0,f)     
+    }
+}
+
+impl core::fmt::Octal for SQLITE_RESULT {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        core::fmt::Octal::fmt(&self.0,f)      
+    }
+}
+
+impl core::fmt::LowerHex for SQLITE_RESULT {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        core::fmt::LowerHex::fmt(&self.0,f)
+    }
+}
+
+impl core::fmt::UpperHex for SQLITE_RESULT {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        core::fmt::UpperHex::fmt(&self.0,f)       
+    }
+}
+
+
 const SQLITE3_OK :SQLITE_RESULT = SQLITE_RESULT(0);
 
 
@@ -171,7 +208,7 @@ impl<'a> Sqlite3Conn<'a> {
                 //sqlres = sqlite3_open_v2.as_ref().unwrap()(connstr.as_ptr() as *const std::ffi::c_char,ppdb,SQLITE_OPEN_READWRITE,std::ptr::null());
                 sqlres = retv.hdl.sqlite3_open_v2.as_ref().unwrap()(connstr.as_ptr() as *const std::ffi::c_char,ppdb,SQLITE_OPEN_READWRITE,std::ptr::null());
                 if sqlres != SQLITE3_OK {
-                    sqlite3dyn_new_error!{Sqlite3ConnError,"connect {} error", dsn}
+                    sqlite3dyn_new_error!{Sqlite3ConnError,"connect {} error {}", dsn,sqlres}
                 }
             }
         }
@@ -206,15 +243,15 @@ impl<'a> Sqlite3Conn<'a> {
                 if errsores.is_ok() {
                     let nerrs = errsores.unwrap().to_string();
                     sqlite3dyn_log_trace!("nerrs [{}]",nerrs);
-                    retores = Err(sqlite3dyn_error_create!{Sqlite3ConnError,"exec {}\nerror {}",sqlstr,nerrs})    
+                    retores = Err(sqlite3dyn_error_create!{Sqlite3ConnError,"exec {}\nstr {}",sqlstr,nerrs})    
                 } else {
-                    retores = Err(sqlite3dyn_error_create!{Sqlite3ConnError,"exec {}\nerror",sqlstr})
+                    retores = Err(sqlite3dyn_error_create!{Sqlite3ConnError,"exec {}\nerror {}",sqlstr,sqlres})
                 }
 
                 self.hdl.sqlite3_free.as_ref().unwrap()(errmsg);
                 errmsg = std::ptr::null_mut();
             } else if sqlres != SQLITE3_OK {
-                retores = Err(sqlite3dyn_error_create!{Sqlite3ConnError,"exec {}\nerror",sqlstr});
+                retores = Err(sqlite3dyn_error_create!{Sqlite3ConnError,"exec {}\nerror {}",sqlstr,sqlres});
             }
         }
 
