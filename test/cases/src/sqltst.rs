@@ -39,18 +39,39 @@ struct SqlRecord {
 fn call_sql_callback(ptr :*mut std::ffi::c_void,vals :&Vec<String>,cols :&Vec<String>) -> Result<(),Box<dyn Error>> {
 	let sqlr :*mut SqlRecord = ptr as *mut SqlRecord;
 	let mut idx :usize;
+	let mut width :usize = 1;
 
 	idx = 0;
 	while idx < vals.len() {
-		println!("vals.[{}]=[{}]",idx,vals[idx]);
+		if vals[idx].len() >= width {
+			width = vals[idx].len() + 1;
+		}
 		idx += 1;
 	}
 
 	idx = 0;
 	while idx < cols.len() {
-		println!("cols.[{}]=[{}]",idx,cols[idx]);
+		if cols[idx].len() >= width {
+			width = cols[idx].len() + 1;
+		}
 		idx += 1;
 	}
+
+
+	idx = 0;
+	while idx < vals.len() {
+		print!("{:width$}",vals[idx]);
+		idx += 1;
+	}
+
+	print!("\n");
+
+	idx = 0;
+	while idx < cols.len() {
+		print!("{:width$}",cols[idx]);
+		idx += 1;
+	}
+	print!("\n");
 
 
 	unsafe {
@@ -85,7 +106,7 @@ fn sqlexec_handler(ns :NameSpaceEx,_optargset :Option<Arc<RefCell<dyn ArgSetImpl
 	}
 
 
-	println!("exec on [{}] succ",sarr[0]);
+	println!("exec on [{}] succ cnt {}",sarr[0],sqlr.cnt);
 
 	Ok(())
 }

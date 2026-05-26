@@ -33,38 +33,6 @@ mod logtrans;
 mod sqltst;
 
 
-struct CCLib {
-    iv :i32,
-}
-
-impl CCLib {
-    fn new(iv :i32) -> CCLib {
-        CCLib {
-            iv :iv,
-        }
-    }
-}
-
-struct CCFunc<'a> {
-    cclib :&'a CCLib,
-}
-
-impl<'a> CCFunc<'a> {
-    fn new(cv :&'a CCLib)  -> CCFunc<'a> {
-        CCFunc {
-            cclib :cv,
-        }
-    }
-}
-
-fn func_parse() {
-    let clib :CCLib = CCLib::new(3);
-    let cf :CCFunc = CCFunc::new(&clib);
-
-    println!("iv {}", clib.iv);
-    println!("cclib.iv {}",cf.cclib.iv);
-    return;
-}
 
 
 #[extargs_map_function()]
@@ -79,7 +47,6 @@ fn main() -> Result<(),Box<dyn Error>> {
     extargs_load_commandline!(parser,commandline)?;
     logtrans::prepare_log(parser.clone())?;
     sqltst::load_sql_handler(parser.clone())?;
-    func_parse();
     let ores = parser.parse_commandline_ex(None,None,None,None);
     if ores.is_err() {
         let e = ores.err().unwrap();
