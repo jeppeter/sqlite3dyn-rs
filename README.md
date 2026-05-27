@@ -2,6 +2,7 @@
 > rust dynamic call sqlite3 share object
 
 ### Release History
+* May 27th 2026 Release 0.1.2 for simplified the call mechanism of the dll functions
 * May 26th 2026 Release 0.1.0 for first usable 
 
 
